@@ -34,6 +34,13 @@ class AccountOut(BaseModel):
     email: EmailStr
     plan: Plan
     created_at: datetime
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
+
+
+class BrandingUpdateRequest(BaseModel):
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
 
 
 class PlanChangeRequest(BaseModel):
@@ -161,6 +168,9 @@ class PacketOut(BaseModel):
     created_at: datetime
     paid_at: Optional[datetime]
     upload_url: Optional[str] = None
+    brand_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
 
 
 class PacketDetailOut(PacketOut):

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, DateTime, Date, Boolean, ForeignKey, Enum as SAEnum, Text, Table
+    Column, String, DateTime, Date, Boolean, ForeignKey, Enum as SAEnum, Text, Table, LargeBinary, Integer
 )
 from sqlalchemy.orm import relationship
 
@@ -110,6 +110,10 @@ class Account(Base):
     plan = Column(SAEnum(Plan), default=Plan.STARTER, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Branding shown to subcontractors on the public upload page.
+    brand_logo_url = Column(String, nullable=True)
+    brand_welcome_message = Column(Text, nullable=True)
+
     subcontractors = relationship("Subcontractor", back_populates="account", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="account", cascade="all, delete-orphan")
 
@@ -154,7 +158,8 @@ class Document(Base):
     id = Column(String, primary_key=True, default=gen_id)
     subcontractor_id = Column(String, ForeignKey("subcontractors.id"), nullable=False)
     document_type = Column(SAEnum(DocumentType), nullable=False)
-    file_path = Column(String, nullable=True)
+    file_data = Column(LargeBinary, nullable=True)
+    content_type = Column(String, nullable=True)
     original_filename = Column(String, nullable=True)
 
     status = Column(SAEnum(DocumentStatus), default=DocumentStatus.UPLOAD_REQUIRED)
@@ -227,7 +232,8 @@ class PacketDocument(Base):
     packet_id = Column(String, ForeignKey("payment_packets.id"), nullable=False)
     doc_type = Column(SAEnum(PacketDocType), nullable=False)
 
-    file_path = Column(String, nullable=True)
+    file_data = Column(LargeBinary, nullable=True)
+    content_type = Column(String, nullable=True)
     original_filename = Column(String, nullable=True)
     invoice_amount_cents = Column(String, nullable=True)  # only meaningful for INVOICE type
 

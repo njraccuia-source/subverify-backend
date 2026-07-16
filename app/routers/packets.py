@@ -1,6 +1,5 @@
 import io
 import os
-import shutil
 from datetime import datetime
 
 import qrcode
@@ -29,6 +28,11 @@ def _packet_to_out(packet: PaymentPacket, request: Request | None = None) -> dic
     if request is not None:
         base = str(request.base_url).rstrip("/")
         data["upload_url"] = f"{base}/pay/{packet.public_token}"
+    account = packet.account
+    if account is not None:
+        data["brand_name"] = account.company_name
+        data["brand_logo_url"] = account.brand_logo_url
+        data["brand_welcome_message"] = account.brand_welcome_message
     return data
 
 
@@ -199,16 +203,11 @@ def public_upload_document(
         db.add(doc)
         db.flush()
 
-    dest_dir = os.path.join(settings.upload_dir, "packets", packet.id)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.join(dest_dir, f"{doc_type.value}_{file.filename}")
-    with open(dest_path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
-    file_size = os.path.getsize(dest_path)
+    file_bytes = file.file.read()
+    review = review_document(doc_type, file.filename, len(file_bytes))
 
-    review = review_document(doc_type, file.filename, file_size)
-
-    doc.file_path = dest_path
+    doc.file_data = file_bytes
+    doc.content_type = file.content_type
     doc.original_filename = file.filename
     doc.uploaded_at = datetime.utcnow()
     doc.status = PacketDocStatus.PENDING_REVIEW
@@ -226,3 +225,23 @@ def public_upload_document(
     data = _packet_to_out(packet, request)
     data["documents"] = packet.documents
     return data
+
+
+@router.get("/packets/{packet_id}/documents/{doc_id}/file")
+def download_packet_document_file(
+    packet_id: str, doc_id: str,
+    db: Session = Depends(get_db), current: Account = Depends(get_current_account),
+):
+    packet = db.query(PaymentPacket).filter(
+        PaymentPacket.id == packet_id, PaymentPacket.account_id == current.id
+    ).first()
+    if not packet:
+        raise HTTPException(status_code=404, detail="Packet not found.")
+    doc = next((d for d in packet.documents if d.id == doc_id), None)
+    if not doc or not doc.file_data:
+        raise HTTPException(status_code=404, detail="File not found.")
+    return StreamingResponse(
+        io.BytesIO(doc.file_data),
+        media_type=doc.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{doc.original_filename or "document"}"'},
+    )

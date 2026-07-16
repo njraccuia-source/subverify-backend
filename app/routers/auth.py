@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_account
 from app.models import Account, DocumentType, Document, DocumentStatus
-from app.schemas import SignupRequest, TokenResponse, AccountOut, PlanChangeRequest
+from app.schemas import SignupRequest, TokenResponse, AccountOut, PlanChangeRequest, BrandingUpdateRequest
 from app.security import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -43,6 +43,27 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @router.get("/me", response_model=AccountOut)
 def me(current: Account = Depends(get_current_account)):
+    return current
+
+
+@router.patch("/branding", response_model=AccountOut)
+def update_branding(
+    payload: BrandingUpdateRequest,
+    db: Session = Depends(get_db),
+    current: Account = Depends(get_current_account),
+):
+    """
+    Set what subcontractors see at the top of their upload page: a logo and a
+    short welcome message. brand_logo_url should be a direct link to an image
+    (e.g. a logo already hosted on your website, or an image-hosting link) —
+    this API doesn't host image files itself.
+    """
+    if payload.brand_logo_url is not None:
+        current.brand_logo_url = payload.brand_logo_url
+    if payload.brand_welcome_message is not None:
+        current.brand_welcome_message = payload.brand_welcome_message
+    db.commit()
+    db.refresh(current)
     return current
 
 

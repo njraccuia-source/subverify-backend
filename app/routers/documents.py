@@ -1,10 +1,11 @@
 import os
-import shutil
 from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import io
 
 from app.ai_review import review_document
 from app.config import settings
@@ -44,16 +45,11 @@ def upload_document(
         db.add(doc)
         db.flush()
 
-    dest_dir = os.path.join(settings.upload_dir, sub.id)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.join(dest_dir, f"{document_type.value}_{file.filename}")
-    with open(dest_path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
-    file_size = os.path.getsize(dest_path)
+    file_bytes = file.file.read()
+    review = review_document(document_type, file.filename, len(file_bytes))
 
-    review = review_document(document_type, file.filename, file_size)
-
-    doc.file_path = dest_path
+    doc.file_data = file_bytes
+    doc.content_type = file.content_type
     doc.original_filename = file.filename
     doc.expiry_date = expiry_date
     doc.uploaded_at = datetime.utcnow()
@@ -75,6 +71,23 @@ def list_subcontractor_documents(
 ):
     sub = _owned_subcontractor(db, subcontractor_id, current)
     return db.query(Document).filter(Document.subcontractor_id == sub.id).all()
+
+
+@router.get("/documents/{document_id}/file")
+def download_document_file(document_id: str, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
+    doc = (
+        db.query(Document)
+        .join(Subcontractor)
+        .filter(Document.id == document_id, Subcontractor.account_id == current.id)
+        .first()
+    )
+    if not doc or not doc.file_data:
+        raise HTTPException(status_code=404, detail="File not found.")
+    return StreamingResponse(
+        io.BytesIO(doc.file_data),
+        media_type=doc.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{doc.original_filename or "document"}"'},
+    )
 
 
 @router.patch("/documents/{document_id}/review", response_model=DocumentOut)
