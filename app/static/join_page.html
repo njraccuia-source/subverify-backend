@@ -96,7 +96,7 @@ async function init() {
   const appEl = document.getElementById("app");
   try {
     if (mode === "join") {
-      const res = await fetch(`${origin}/api/public/accounts/${token}`);
+      const res = await fetch(`${origin}/api/public/clients/${token}`);
       if (!res.ok) throw new Error("bad link");
       brand = await res.json();
       loadingEl.classList.add("hidden");
@@ -159,7 +159,7 @@ async function submitRegistration() {
     return;
   }
   errEl.textContent = "";
-  const res = await fetch(`${origin}/api/public/accounts/${token}/start`, {
+  const res = await fetch(`${origin}/api/public/clients/${token}/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contact_name: name, company_name: company, contact_email: email, job_description: job || null }),

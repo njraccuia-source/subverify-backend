@@ -2,17 +2,15 @@ import io
 import os
 from datetime import datetime
 
-import qrcode
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.ai_review import review_document
-from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_account
 from app.models import (
-    Account, PaymentPacket, PacketDocument, PacketDocType, PacketDocStatus, PacketStatus,
+    Account, Client, PaymentPacket, PacketDocument, PacketDocType, PacketDocStatus, PacketStatus,
 )
 from app.notifications import send_email
 from app.schemas import (
@@ -38,16 +36,15 @@ def _packet_to_out(packet: PaymentPacket, request: Request | None = None) -> dic
     if request is not None:
         base = str(request.base_url).rstrip("/")
         data["upload_url"] = f"{base}/pay/{packet.public_token}"
-    account = packet.account
-    if account is not None:
-        data["brand_name"] = account.company_name
-        data["brand_logo_url"] = account.brand_logo_url
-        data["brand_welcome_message"] = account.brand_welcome_message
+    client = packet.client
+    if client is not None:
+        data["brand_name"] = client.name
+        data["brand_logo_url"] = client.brand_logo_url
+        data["brand_welcome_message"] = client.brand_welcome_message
     return data
 
 
 def _maybe_flip_to_submitted(packet: PaymentPacket) -> None:
-    """Once all three required docs are uploaded, the packet is ready for GC review."""
     if packet.status not in (PacketStatus.COLLECTING, PacketStatus.NEEDS_CHANGES):
         return
     docs_by_type = {d.doc_type: d for d in packet.documents}
@@ -60,28 +57,39 @@ def _maybe_flip_to_submitted(packet: PaymentPacket) -> None:
         packet.submitted_at = datetime.utcnow()
 
 
+def _owned_packet(db: Session, packet_id: str, account: Account) -> PaymentPacket:
+    packet = (
+        db.query(PaymentPacket)
+        .join(Client)
+        .filter(PaymentPacket.id == packet_id, Client.account_id == account.id)
+        .first()
+    )
+    if not packet:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    return packet
+
+
 # ---------------------------------------------------------------------------
 # GC-authenticated management
 # ---------------------------------------------------------------------------
 
 @router.get("/packets", response_model=list[PacketOut])
-def list_packets(request: Request, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
-    packets = (
-        db.query(PaymentPacket)
-        .filter(PaymentPacket.account_id == current.id)
-        .order_by(PaymentPacket.created_at.desc())
-        .all()
-    )
+def list_packets(
+    request: Request,
+    client_id: str | None = None,
+    db: Session = Depends(get_db),
+    current: Account = Depends(get_current_account),
+):
+    q = db.query(PaymentPacket).join(Client).filter(Client.account_id == current.id)
+    if client_id:
+        q = q.filter(PaymentPacket.client_id == client_id)
+    packets = q.order_by(PaymentPacket.created_at.desc()).all()
     return [_packet_to_out(p, request) for p in packets]
 
 
 @router.get("/packets/{packet_id}", response_model=PacketDetailOut)
 def get_packet(packet_id: str, request: Request, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
-    packet = db.query(PaymentPacket).filter(
-        PaymentPacket.id == packet_id, PaymentPacket.account_id == current.id
-    ).first()
-    if not packet:
-        raise HTTPException(status_code=404, detail="Submission not found.")
+    packet = _owned_packet(db, packet_id, current)
     data = _packet_to_out(packet, request)
     data["documents"] = packet.documents
     return data
@@ -92,11 +100,7 @@ def download_packet_document_file(
     packet_id: str, doc_id: str,
     db: Session = Depends(get_db), current: Account = Depends(get_current_account),
 ):
-    packet = db.query(PaymentPacket).filter(
-        PaymentPacket.id == packet_id, PaymentPacket.account_id == current.id
-    ).first()
-    if not packet:
-        raise HTTPException(status_code=404, detail="Submission not found.")
+    packet = _owned_packet(db, packet_id, current)
     doc = next((d for d in packet.documents if d.id == doc_id), None)
     if not doc or not doc.file_data:
         raise HTTPException(status_code=404, detail="File not found.")
@@ -112,22 +116,19 @@ def review_packet(
     packet_id: str, payload: PacketReviewRequest, request: Request,
     db: Session = Depends(get_db), current: Account = Depends(get_current_account),
 ):
-    packet = db.query(PaymentPacket).filter(
-        PaymentPacket.id == packet_id, PaymentPacket.account_id == current.id
-    ).first()
-    if not packet:
-        raise HTTPException(status_code=404, detail="Submission not found.")
+    packet = _owned_packet(db, packet_id, current)
     if packet.status != PacketStatus.SUBMITTED:
         raise HTTPException(status_code=400, detail="Only submissions with all three documents uploaded can be reviewed.")
 
     packet.reviewed_at = datetime.utcnow()
+    client_name = packet.client.name
 
     if payload.approve:
         packet.status = PacketStatus.APPROVED
         packet.revision_note = None
         send_email(
             packet.subcontractor_email,
-            f"You're all set — {current.company_name}",
+            f"You're all set — {client_name}",
             f"Hi {packet.contact_name},\n\nThanks — we've reviewed your submission for "
             f"\"{packet.job_description or 'your job'}\" and everything's approved. "
             f"You're cleared for payment.",
@@ -138,7 +139,7 @@ def review_packet(
         base = str(request.base_url).rstrip("/")
         send_email(
             packet.subcontractor_email,
-            f"A couple changes needed — {current.company_name}",
+            f"A couple changes needed — {client_name}",
             f"Hi {packet.contact_name},\n\nWe reviewed your submission for "
             f"\"{packet.job_description or 'your job'}\" and need a few changes:\n\n"
             f"{payload.note}\n\nPlease update using your original link: {base}/pay/{packet.public_token}",
@@ -151,11 +152,7 @@ def review_packet(
 
 @router.post("/packets/{packet_id}/mark-paid", response_model=PacketOut)
 def mark_packet_paid(packet_id: str, request: Request, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
-    packet = db.query(PaymentPacket).filter(
-        PaymentPacket.id == packet_id, PaymentPacket.account_id == current.id
-    ).first()
-    if not packet:
-        raise HTTPException(status_code=404, detail="Submission not found.")
+    packet = _owned_packet(db, packet_id, current)
     if packet.status != PacketStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Only approved submissions can be marked paid.")
 
@@ -167,7 +164,7 @@ def mark_packet_paid(packet_id: str, request: Request, db: Session = Depends(get
 
 
 # ---------------------------------------------------------------------------
-# Admin dashboard (HTML) — where the GC logs in and reviews everything
+# Admin dashboard (HTML)
 # ---------------------------------------------------------------------------
 
 @router.get("/app", response_class=HTMLResponse, include_in_schema=False)
@@ -181,33 +178,31 @@ def admin_dashboard():
 
 @router.get("/join/{intake_token}", response_class=HTMLResponse, include_in_schema=False)
 def public_join_page(intake_token: str):
-    """The permanent link/QR the GC gives to any subcontractor. Self-registers
-    them and walks them through the three uploads."""
     return JOIN_PAGE_HTML
 
 
-@router.get("/api/public/accounts/{intake_token}", tags=["public"])
-def public_account_branding(intake_token: str, db: Session = Depends(get_db)):
-    account = db.query(Account).filter(Account.intake_token == intake_token).first()
-    if not account:
+@router.get("/api/public/clients/{intake_token}", tags=["public"])
+def public_client_branding(intake_token: str, db: Session = Depends(get_db)):
+    client = db.query(Client).filter(Client.intake_token == intake_token).first()
+    if not client:
         raise HTTPException(status_code=404, detail="This link isn't valid. Ask for a new one.")
     return {
-        "brand_name": account.company_name,
-        "brand_logo_url": account.brand_logo_url,
-        "brand_welcome_message": account.brand_welcome_message,
+        "brand_name": client.name,
+        "brand_logo_url": client.brand_logo_url,
+        "brand_welcome_message": client.brand_welcome_message,
     }
 
 
-@router.post("/api/public/accounts/{intake_token}/start", response_model=PacketDetailOut, tags=["public"])
+@router.post("/api/public/clients/{intake_token}/start", response_model=PacketDetailOut, tags=["public"])
 def public_start_submission(
     intake_token: str, payload: PublicIntakeStartRequest, request: Request, db: Session = Depends(get_db)
 ):
-    account = db.query(Account).filter(Account.intake_token == intake_token).first()
-    if not account:
+    client = db.query(Client).filter(Client.intake_token == intake_token).first()
+    if not client:
         raise HTTPException(status_code=404, detail="This link isn't valid. Ask for a new one.")
 
     packet = PaymentPacket(
-        account_id=account.id,
+        client_id=client.id,
         contact_name=payload.contact_name,
         subcontractor_name=payload.company_name,
         subcontractor_email=payload.contact_email,
@@ -227,8 +222,6 @@ def public_start_submission(
 
 @router.get("/pay/{token}", response_class=HTMLResponse, include_in_schema=False)
 def public_upload_page(token: str):
-    """A returning subcontractor's link to check status / finish uploads —
-    same page, it detects an existing submission from the token in the URL."""
     return JOIN_PAGE_HTML
 
 

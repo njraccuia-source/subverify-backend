@@ -34,18 +34,36 @@ class AccountOut(BaseModel):
     email: EmailStr
     plan: Plan
     created_at: datetime
-    brand_logo_url: Optional[str] = None
-    brand_welcome_message: Optional[str] = None
-    intake_token: Optional[str] = None
-
-
-class BrandingUpdateRequest(BaseModel):
-    brand_logo_url: Optional[str] = None
-    brand_welcome_message: Optional[str] = None
 
 
 class PlanChangeRequest(BaseModel):
     plan: Plan
+
+
+# ---------------------------------------------------------------------------
+# Clients (the businesses you manage — each gets its own link/branding)
+# ---------------------------------------------------------------------------
+
+class ClientCreate(BaseModel):
+    name: str
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
+
+
+class ClientUpdate(BaseModel):
+    name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
+
+
+class ClientOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    brand_logo_url: Optional[str] = None
+    brand_welcome_message: Optional[str] = None
+    intake_token: str
+    created_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +179,7 @@ class PacketDocumentOut(BaseModel):
 class PacketOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    client_id: str
     public_token: str
     contact_name: str
     subcontractor_name: str

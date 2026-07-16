@@ -45,16 +45,16 @@
   .link-box { background: #f3f1ea; border-radius: 8px; padding: 10px 12px; font-size: 13px; word-break: break-all; flex: 1; min-width: 200px; }
   .qr-img { width: 140px; height: 140px; border: 1px solid var(--line); border-radius: 10px; background: white; }
 
-  .sub-list { list-style: none; padding: 0; margin: 0; }
-  .sub-item {
+  .list { list-style: none; padding: 0; margin: 0; }
+  .list-item {
     display: flex; justify-content: space-between; align-items: center; padding: 14px 4px;
     border-bottom: 1px solid var(--line); cursor: pointer;
   }
-  .sub-item:last-child { border-bottom: none; }
-  .sub-item:hover { background: #f9f8f4; }
-  .sub-main { display: flex; flex-direction: column; gap: 2px; }
-  .sub-company { font-weight: 700; font-size: 14.5px; }
-  .sub-meta { font-size: 12.5px; color: var(--muted); }
+  .list-item:last-child { border-bottom: none; }
+  .list-item:hover { background: #f9f8f4; }
+  .li-main { display: flex; flex-direction: column; gap: 2px; }
+  .li-title { font-weight: 700; font-size: 14.5px; }
+  .li-meta { font-size: 12.5px; color: var(--muted); }
 
   .pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
   .pill.collecting { background: #ece7db; color: var(--muted); }
@@ -70,9 +70,8 @@
   .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 30px 0; }
   #app.hidden, .hidden { display: none !important; }
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-  .tabs button { flex: 1; }
   .auth-card { max-width: 400px; margin: 60px auto 0; }
+  .add-client-card { border: 1px dashed var(--line); }
 
   @media (max-width: 520px) {
     .wrap { padding: 18px 14px 70px; }
@@ -83,8 +82,8 @@
     .row { flex-direction: column; align-items: stretch; }
     .row button, .row .link-box { width: 100%; }
     button.primary, button.secondary, button.danger { width: 100%; padding: 13px 16px; font-size: 15px; }
-    .sub-item { padding: 14px 2px; }
-    .sub-company { font-size: 14px; }
+    .list-item { padding: 14px 2px; }
+    .li-title { font-size: 14px; }
     .doc-row { flex-wrap: wrap; gap: 6px; }
     .qr-img { width: 120px; height: 120px; }
   }
@@ -99,6 +98,8 @@
 const origin = window.location.origin;
 let token = localStorage.getItem("subverify_token") || null;
 let me = null;
+let clientsList = [];
+let currentClient = null;
 let packets = [];
 let currentPacketId = null;
 
@@ -112,7 +113,7 @@ async function boot() {
     const res = await fetch(`${origin}/auth/me`, { headers: authHeaders() });
     if (!res.ok) throw new Error();
     me = await res.json();
-    renderDashboard();
+    renderClientList();
   } catch (e) {
     localStorage.removeItem("subverify_token");
     token = null;
@@ -121,32 +122,32 @@ async function boot() {
 }
 
 // ---------------------------------------------------------------------------
-// Login / Signup
+// Login / one-time setup
 // ---------------------------------------------------------------------------
 
 function renderLogin() {
   document.getElementById("app").innerHTML = `
     <div class="card auth-card">
       <h1>SubVerify</h1>
-      <p class="muted">Log in to your client account.</p>
+      <p class="muted">Log in.</p>
       <div class="field"><label>Email</label><input id="login-email" type="email" /></div>
       <div class="field"><label>Password</label><input id="login-password" type="password" /></div>
       <button class="primary" style="width:100%;" onclick="doLogin()">Log in</button>
       <div id="login-err" class="err"></div>
-      <p class="muted" style="margin-top:18px;">New client? <a href="#" onclick="renderSignup();return false;">Create an account</a></p>
+      <p class="muted" style="margin-top:18px;">First time here? <a href="#" onclick="renderSetup();return false;">Set up your login</a></p>
     </div>
   `;
 }
 
-function renderSignup() {
+function renderSetup() {
   document.getElementById("app").innerHTML = `
     <div class="card auth-card">
-      <h1>New client account</h1>
-      <p class="muted">One account per client — each gets their own link and branding.</p>
-      <div class="field"><label>Client / company name</label><input id="su-company" type="text" /></div>
+      <h1>Set up your login</h1>
+      <p class="muted">This is the one login you'll use — you'll add each client (Northeastern Construction, PS Construction, etc.) from inside, after logging in.</p>
+      <div class="field"><label>Your name / business</label><input id="su-company" type="text" /></div>
       <div class="field"><label>Login email</label><input id="su-email" type="email" /></div>
       <div class="field"><label>Password</label><input id="su-password" type="password" placeholder="At least 8 characters" /></div>
-      <button class="primary" style="width:100%;" onclick="doSignup()">Create account</button>
+      <button class="primary" style="width:100%;" onclick="doSignup()">Create my login</button>
       <div id="su-err" class="err"></div>
       <p class="muted" style="margin-top:18px;"><a href="#" onclick="renderLogin();return false;">Back to log in</a></p>
     </div>
@@ -199,20 +200,87 @@ function logout() {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard
+// Client list (top level after login)
 // ---------------------------------------------------------------------------
 
-async function renderDashboard() {
-  const joinUrl = `${origin}/join/${me.intake_token}`;
+async function renderClientList() {
   document.getElementById("app").innerHTML = `
     <div class="topbar">
       <h2>${escapeHtml(me.company_name)}</h2>
       <button class="link-btn" onclick="logout()">Log out</button>
     </div>
+    <div class="card">
+      <h3>Your clients</h3>
+      <p class="muted">Each client gets its own link, QR code, and branding. Add one for every business you're collecting documents for.</p>
+      <div id="client-list" class="list"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card add-client-card">
+      <h3>Add a client</h3>
+      <div class="field"><label>Client name</label><input id="new-client-name" type="text" placeholder="e.g. Northeastern Construction" /></div>
+      <button class="primary" onclick="createClient()">Add client</button>
+      <div id="new-client-err" class="err"></div>
+    </div>
+  `;
+  loadClients();
+}
+
+async function loadClients() {
+  const res = await fetch(`${origin}/clients`, { headers: authHeaders() });
+  clientsList = res.ok ? await res.json() : [];
+  const listEl = document.getElementById("client-list");
+  if (!listEl) return;
+  if (clientsList.length === 0) {
+    listEl.innerHTML = `<div class="empty">No clients yet — add one below.</div>`;
+    return;
+  }
+  listEl.innerHTML = clientsList.map(c => `
+    <div class="list-item" onclick="openClient('${c.id}')">
+      <div class="li-main">
+        <div class="li-title">${escapeHtml(c.name)}</div>
+        <div class="li-meta">Added ${new Date(c.created_at).toLocaleDateString()}</div>
+      </div>
+      <div class="li-meta">View &rarr;</div>
+    </div>
+  `).join("");
+}
+
+async function createClient() {
+  const name = document.getElementById("new-client-name").value.trim();
+  const errEl = document.getElementById("new-client-err");
+  if (!name) { errEl.textContent = "Enter a client name."; return; }
+  const res = await fetch(`${origin}/clients`, {
+    method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) { errEl.textContent = "Something went wrong."; return; }
+  document.getElementById("new-client-name").value = "";
+  errEl.textContent = "";
+  loadClients();
+}
+
+// ---------------------------------------------------------------------------
+// Single client dashboard: link/QR, branding, submissions
+// ---------------------------------------------------------------------------
+
+async function openClient(id) {
+  const res = await fetch(`${origin}/clients/${id}`, { headers: authHeaders() });
+  if (!res.ok) return;
+  currentClient = await res.json();
+  renderClientDashboard();
+}
+
+async function renderClientDashboard() {
+  const c = currentClient;
+  const joinUrl = `${origin}/join/${c.intake_token}`;
+  document.getElementById("app").innerHTML = `
+    <div class="topbar">
+      <button class="link-btn" onclick="renderClientList()">&larr; All clients</button>
+    </div>
+    <h2 style="margin: 0 0 18px;">${escapeHtml(c.name)}</h2>
 
     <div class="card">
-      <h3>Your client link</h3>
-      <p class="muted">Give this link or QR code to any subcontractor — they'll register themselves and upload their documents.</p>
+      <h3>This client's link</h3>
+      <p class="muted">Give this link or QR code to any of ${escapeHtml(c.name)}'s subcontractors — they register themselves and upload their documents.</p>
       <div class="row">
         <div class="link-box" id="join-link">${escapeHtml(joinUrl)}</div>
         <button class="secondary" onclick="copyJoinLink('${joinUrl}')">Copy</button>
@@ -222,16 +290,17 @@ async function renderDashboard() {
 
     <div class="card">
       <h3>Branding</h3>
-      <p class="muted">Shown to subcontractors at the top of their upload page.</p>
-      <div class="field"><label>Logo URL (a link to an already-hosted image)</label><input id="brand-logo" type="text" value="${escapeAttr(me.brand_logo_url || '')}" /></div>
-      <div class="field"><label>Welcome message</label><textarea id="brand-msg">${escapeHtml(me.brand_welcome_message || '')}</textarea></div>
-      <button class="primary" onclick="saveBranding()">Save branding</button>
+      <p class="muted">Shown to this client's subcontractors at the top of their upload page.</p>
+      <div class="field"><label>Client name</label><input id="brand-name" type="text" value="${escapeAttr(c.name)}" /></div>
+      <div class="field"><label>Logo URL (a link to an already-hosted image)</label><input id="brand-logo" type="text" value="${escapeAttr(c.brand_logo_url || '')}" /></div>
+      <div class="field"><label>Welcome message</label><textarea id="brand-msg">${escapeHtml(c.brand_welcome_message || '')}</textarea></div>
+      <button class="primary" onclick="saveBranding()">Save</button>
       <span id="brand-saved" style="color:var(--green); font-size:13px; margin-left:10px;"></span>
     </div>
 
     <div class="card">
       <h3>Submissions</h3>
-      <div id="sub-list" class="sub-list"><div class="empty">Loading…</div></div>
+      <div id="sub-list" class="list"><div class="empty">Loading…</div></div>
     </div>
   `;
   loadQr();
@@ -239,7 +308,7 @@ async function renderDashboard() {
 }
 
 async function loadQr() {
-  const res = await fetch(`${origin}/auth/intake-qrcode`, { headers: authHeaders() });
+  const res = await fetch(`${origin}/clients/${currentClient.id}/intake-qrcode`, { headers: authHeaders() });
   if (!res.ok) return;
   const blob = await res.blob();
   document.getElementById("qr-img").src = URL.createObjectURL(blob);
@@ -254,14 +323,15 @@ function copyJoinLink(url) {
 }
 
 async function saveBranding() {
+  const name = document.getElementById("brand-name").value.trim();
   const brand_logo_url = document.getElementById("brand-logo").value.trim();
   const brand_welcome_message = document.getElementById("brand-msg").value.trim();
-  const res = await fetch(`${origin}/auth/branding`, {
+  const res = await fetch(`${origin}/clients/${currentClient.id}`, {
     method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ brand_logo_url, brand_welcome_message }),
+    body: JSON.stringify({ name, brand_logo_url, brand_welcome_message }),
   });
   if (res.ok) {
-    me = await res.json();
+    currentClient = await res.json();
     const el = document.getElementById("brand-saved");
     el.textContent = "Saved";
     setTimeout(() => { el.textContent = ""; }, 1500);
@@ -269,7 +339,7 @@ async function saveBranding() {
 }
 
 async function loadPackets() {
-  const res = await fetch(`${origin}/packets`, { headers: authHeaders() });
+  const res = await fetch(`${origin}/packets?client_id=${currentClient.id}`, { headers: authHeaders() });
   packets = res.ok ? await res.json() : [];
   renderPacketList();
 }
@@ -280,17 +350,17 @@ function statusLabel(s) {
 
 function renderPacketList() {
   const listEl = document.getElementById("sub-list");
+  if (!listEl) return;
   if (packets.length === 0) {
-    listEl.innerHTML = `<div class="empty">No submissions yet. Share your client link above to get started.</div>`;
+    listEl.innerHTML = `<div class="empty">No submissions yet. Share the link above to get started.</div>`;
     return;
   }
-  // Needs-review items first
   const sorted = [...packets].sort((a, b) => (a.status === "submitted" ? -1 : 0) - (b.status === "submitted" ? -1 : 0));
   listEl.innerHTML = sorted.map(p => `
-    <div class="sub-item" onclick="openPacket('${p.id}')">
-      <div class="sub-main">
-        <div class="sub-company">${escapeHtml(p.subcontractor_name)}</div>
-        <div class="sub-meta">${escapeHtml(p.contact_name)} · ${escapeHtml(p.job_description || 'No job description')}</div>
+    <div class="list-item" onclick="openPacket('${p.id}')">
+      <div class="li-main">
+        <div class="li-title">${escapeHtml(p.subcontractor_name)}</div>
+        <div class="li-meta">${escapeHtml(p.contact_name)} · ${escapeHtml(p.job_description || 'No job description')}</div>
       </div>
       <div class="pill ${p.status}">${statusLabel(p.status)}</div>
     </div>
@@ -342,7 +412,7 @@ function renderPacketDetail(p) {
 
   document.getElementById("app").innerHTML = `
     <div class="topbar">
-      <button class="link-btn" onclick="renderDashboard()">&larr; Back to dashboard</button>
+      <button class="link-btn" onclick="renderClientDashboard()">&larr; Back to ${escapeHtml(currentClient.name)}</button>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;">

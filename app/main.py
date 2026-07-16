@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.alerts import start_scheduler
 from app.database import Base, engine
-from app.routers import auth, subcontractors, projects, documents, dashboard, packets
+from app.routers import auth, subcontractors, projects, documents, dashboard, packets, clients
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,6 +32,7 @@ app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(dashboard.router)
 app.include_router(packets.router)
+app.include_router(clients.router)
 
 _scheduler = None
 

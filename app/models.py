@@ -100,29 +100,45 @@ project_subcontractors = Table(
 # ---------------------------------------------------------------------------
 
 class Account(Base):
-    """A general contractor's company account (the paying customer)."""
+    """The one login you use to manage everything — not per-client."""
     __tablename__ = "accounts"
 
     id = Column(String, primary_key=True, default=gen_id)
-    company_name = Column(String, nullable=False)
+    company_name = Column(String, nullable=False)  # your own name/business, shown in the dashboard header
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     plan = Column(SAEnum(Plan), default=Plan.STARTER, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Branding shown to subcontractors on the public upload page.
-    brand_logo_url = Column(String, nullable=True)
-    brand_welcome_message = Column(Text, nullable=True)
-
-    # Permanent, reusable link/QR the GC gives out to any subcontractor —
-    # doesn't change between submissions.
-    intake_token = Column(String, unique=True, index=True, default=gen_id)
-
     subcontractors = relationship("Subcontractor", back_populates="account", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="account", cascade="all, delete-orphan")
+    clients = relationship("Client", back_populates="account", cascade="all, delete-orphan")
 
     def subcontractor_limit(self):
         return PLAN_LIMITS[self.plan]["max_subcontractors"]
+
+
+class Client(Base):
+    """
+    One of the businesses you manage submissions for (e.g. "Northeastern
+    Construction"). Each gets its own permanent link/QR, branding, and list
+    of subcontractor submissions — filtered by this, not by a separate login.
+    """
+    __tablename__ = "clients"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    account_id = Column(String, ForeignKey("accounts.id"), nullable=False)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    brand_logo_url = Column(String, nullable=True)
+    brand_welcome_message = Column(Text, nullable=True)
+
+    # Permanent, reusable link/QR given out to any subcontractor of this client.
+    intake_token = Column(String, unique=True, index=True, default=gen_id)
+
+    account = relationship("Account", back_populates="clients")
+    packets = relationship("PaymentPacket", back_populates="client", cascade="all, delete-orphan")
 
 
 class Subcontractor(Base):
@@ -215,7 +231,7 @@ class PaymentPacket(Base):
     __tablename__ = "payment_packets"
 
     id = Column(String, primary_key=True, default=gen_id)
-    account_id = Column(String, ForeignKey("accounts.id"), nullable=False)
+    client_id = Column(String, ForeignKey("clients.id"), nullable=False)
     public_token = Column(String, unique=True, nullable=False, index=True, default=gen_id)
 
     contact_name = Column(String, nullable=False)
@@ -230,7 +246,7 @@ class PaymentPacket(Base):
     revision_note = Column(Text, nullable=True)  # GC's reason when denying
     paid_at = Column(DateTime, nullable=True)
 
-    account = relationship("Account")
+    client = relationship("Client", back_populates="packets")
     documents = relationship("PacketDocument", back_populates="packet", cascade="all, delete-orphan")
 
 
