@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
+import io
+import qrcode
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -65,6 +68,17 @@ def update_branding(
     db.commit()
     db.refresh(current)
     return current
+
+
+@router.get("/intake-qrcode")
+def intake_qrcode(request: Request, current: Account = Depends(get_current_account)):
+    base = str(request.base_url).rstrip("/")
+    join_url = f"{base}/join/{current.intake_token}"
+    img = qrcode.make(join_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
 
 
 @router.patch("/plan", response_model=AccountOut)

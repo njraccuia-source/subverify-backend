@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SubVerify — Dashboard</title>
+<style>
+  :root {
+    --ink: #1c2126; --paper: #f6f4ef; --card: #ffffff; --line: #dcd7cc;
+    --orange: #d9560c; --green: #2f6d47; --red: #b3361f; --muted: #6b6559;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px 80px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .topbar h2 { margin: 0; font-size: 18px; }
+  .link-btn { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  h3 { font-size: 15px; margin: 0 0 12px; }
+  p.muted { color: var(--muted); font-size: 13.5px; margin: 0 0 16px; }
+
+  .field { margin-bottom: 14px; }
+  .field label { font-size: 12.5px; color: var(--muted); display: block; margin-bottom: 5px; font-weight: 600; }
+  .field input, .field textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 11px; font-size: 16px;
+    font-family: inherit; background: #fff; color: var(--ink);
+  }
+  .field textarea { resize: vertical; min-height: 60px; }
+
+  button.primary, button.secondary, button.danger {
+    border: none; border-radius: 9px; padding: 11px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  button.primary { background: var(--ink); color: white; }
+  button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button.danger { background: var(--red); color: white; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .link-box { background: #f3f1ea; border-radius: 8px; padding: 10px 12px; font-size: 13px; word-break: break-all; flex: 1; min-width: 200px; }
+  .qr-img { width: 140px; height: 140px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+
+  .sub-list { list-style: none; padding: 0; margin: 0; }
+  .sub-item {
+    display: flex; justify-content: space-between; align-items: center; padding: 14px 4px;
+    border-bottom: 1px solid var(--line); cursor: pointer;
+  }
+  .sub-item:last-child { border-bottom: none; }
+  .sub-item:hover { background: #f9f8f4; }
+  .sub-main { display: flex; flex-direction: column; gap: 2px; }
+  .sub-company { font-weight: 700; font-size: 14.5px; }
+  .sub-meta { font-size: 12.5px; color: var(--muted); }
+
+  .pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.collecting { background: #ece7db; color: var(--muted); }
+  .pill.submitted { background: #fbe9d8; color: #8a4a13; }
+  .pill.needs_changes { background: #f6dbd6; color: var(--red); }
+  .pill.approved { background: #e2f0e6; color: var(--green); }
+  .pill.paid { background: #dbeee2; color: var(--green); }
+
+  .doc-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .doc-row:last-child { border-bottom: none; }
+  .doc-name { font-weight: 600; font-size: 14px; }
+  .doc-link { font-size: 13px; color: var(--orange); text-decoration: none; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 30px 0; }
+  #app.hidden, .hidden { display: none !important; }
+  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { flex: 1; }
+  .auth-card { max-width: 400px; margin: 60px auto 0; }
+
+  @media (max-width: 520px) {
+    .wrap { padding: 18px 14px 70px; }
+    .card { padding: 16px; }
+    .auth-card { margin: 20px auto 0; }
+    .topbar h2 { font-size: 16px; }
+    h1 { font-size: 20px; }
+    .row { flex-direction: column; align-items: stretch; }
+    .row button, .row .link-box { width: 100%; }
+    button.primary, button.secondary, button.danger { width: 100%; padding: 13px 16px; font-size: 15px; }
+    .sub-item { padding: 14px 2px; }
+    .sub-company { font-size: 14px; }
+    .doc-row { flex-wrap: wrap; gap: 6px; }
+    .qr-img { width: 120px; height: 120px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+</div>
+
+<script>
+const origin = window.location.origin;
+let token = localStorage.getItem("subverify_token") || null;
+let me = null;
+let packets = [];
+let currentPacketId = null;
+
+function authHeaders(extra) {
+  return Object.assign({ "Authorization": `Bearer ${token}` }, extra || {});
+}
+
+async function boot() {
+  if (!token) return renderLogin();
+  try {
+    const res = await fetch(`${origin}/auth/me`, { headers: authHeaders() });
+    if (!res.ok) throw new Error();
+    me = await res.json();
+    renderDashboard();
+  } catch (e) {
+    localStorage.removeItem("subverify_token");
+    token = null;
+    renderLogin();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Login / Signup
+// ---------------------------------------------------------------------------
+
+function renderLogin() {
+  document.getElementById("app").innerHTML = `
+    <div class="card auth-card">
+      <h1>SubVerify</h1>
+      <p class="muted">Log in to your client account.</p>
+      <div class="field"><label>Email</label><input id="login-email" type="email" /></div>
+      <div class="field"><label>Password</label><input id="login-password" type="password" /></div>
+      <button class="primary" style="width:100%;" onclick="doLogin()">Log in</button>
+      <div id="login-err" class="err"></div>
+      <p class="muted" style="margin-top:18px;">New client? <a href="#" onclick="renderSignup();return false;">Create an account</a></p>
+    </div>
+  `;
+}
+
+function renderSignup() {
+  document.getElementById("app").innerHTML = `
+    <div class="card auth-card">
+      <h1>New client account</h1>
+      <p class="muted">One account per client — each gets their own link and branding.</p>
+      <div class="field"><label>Client / company name</label><input id="su-company" type="text" /></div>
+      <div class="field"><label>Login email</label><input id="su-email" type="email" /></div>
+      <div class="field"><label>Password</label><input id="su-password" type="password" placeholder="At least 8 characters" /></div>
+      <button class="primary" style="width:100%;" onclick="doSignup()">Create account</button>
+      <div id="su-err" class="err"></div>
+      <p class="muted" style="margin-top:18px;"><a href="#" onclick="renderLogin();return false;">Back to log in</a></p>
+    </div>
+  `;
+}
+
+async function doLogin() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  const errEl = document.getElementById("login-err");
+  const body = new URLSearchParams();
+  body.set("username", email);
+  body.set("password", password);
+  const res = await fetch(`${origin}/auth/login`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  if (!res.ok) { errEl.textContent = "Incorrect email or password."; return; }
+  const data = await res.json();
+  token = data.access_token;
+  localStorage.setItem("subverify_token", token);
+  boot();
+}
+
+async function doSignup() {
+  const company_name = document.getElementById("su-company").value.trim();
+  const email = document.getElementById("su-email").value.trim();
+  const password = document.getElementById("su-password").value;
+  const errEl = document.getElementById("su-err");
+  if (!company_name || !email || password.length < 8) {
+    errEl.textContent = "Fill in all fields — password needs at least 8 characters.";
+    return;
+  }
+  const res = await fetch(`${origin}/auth/signup`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ company_name, email, password, plan: "starter" }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    errEl.textContent = d.detail || "Something went wrong.";
+    return;
+  }
+  const data = await res.json();
+  token = data.access_token;
+  localStorage.setItem("subverify_token", token);
+  boot();
+}
+
+function logout() {
+  localStorage.removeItem("subverify_token");
+  token = null; me = null;
+  renderLogin();
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+async function renderDashboard() {
+  const joinUrl = `${origin}/join/${me.intake_token}`;
+  document.getElementById("app").innerHTML = `
+    <div class="topbar">
+      <h2>${escapeHtml(me.company_name)}</h2>
+      <button class="link-btn" onclick="logout()">Log out</button>
+    </div>
+
+    <div class="card">
+      <h3>Your client link</h3>
+      <p class="muted">Give this link or QR code to any subcontractor — they'll register themselves and upload their documents.</p>
+      <div class="row">
+        <div class="link-box" id="join-link">${escapeHtml(joinUrl)}</div>
+        <button class="secondary" onclick="copyJoinLink('${joinUrl}')">Copy</button>
+      </div>
+      <div style="margin-top:14px;"><img class="qr-img" id="qr-img" alt="QR code" /></div>
+    </div>
+
+    <div class="card">
+      <h3>Branding</h3>
+      <p class="muted">Shown to subcontractors at the top of their upload page.</p>
+      <div class="field"><label>Logo URL (a link to an already-hosted image)</label><input id="brand-logo" type="text" value="${escapeAttr(me.brand_logo_url || '')}" /></div>
+      <div class="field"><label>Welcome message</label><textarea id="brand-msg">${escapeHtml(me.brand_welcome_message || '')}</textarea></div>
+      <button class="primary" onclick="saveBranding()">Save branding</button>
+      <span id="brand-saved" style="color:var(--green); font-size:13px; margin-left:10px;"></span>
+    </div>
+
+    <div class="card">
+      <h3>Submissions</h3>
+      <div id="sub-list" class="sub-list"><div class="empty">Loading…</div></div>
+    </div>
+  `;
+  loadQr();
+  loadPackets();
+}
+
+async function loadQr() {
+  const res = await fetch(`${origin}/auth/intake-qrcode`, { headers: authHeaders() });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  document.getElementById("qr-img").src = URL.createObjectURL(blob);
+}
+
+function copyJoinLink(url) {
+  navigator.clipboard.writeText(url);
+  const el = document.getElementById("join-link");
+  const old = el.textContent;
+  el.textContent = "Copied!";
+  setTimeout(() => { el.textContent = old; }, 1200);
+}
+
+async function saveBranding() {
+  const brand_logo_url = document.getElementById("brand-logo").value.trim();
+  const brand_welcome_message = document.getElementById("brand-msg").value.trim();
+  const res = await fetch(`${origin}/auth/branding`, {
+    method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ brand_logo_url, brand_welcome_message }),
+  });
+  if (res.ok) {
+    me = await res.json();
+    const el = document.getElementById("brand-saved");
+    el.textContent = "Saved";
+    setTimeout(() => { el.textContent = ""; }, 1500);
+  }
+}
+
+async function loadPackets() {
+  const res = await fetch(`${origin}/packets`, { headers: authHeaders() });
+  packets = res.ok ? await res.json() : [];
+  renderPacketList();
+}
+
+function statusLabel(s) {
+  return { collecting: "Waiting on sub", submitted: "Needs your review", needs_changes: "Changes requested", approved: "Cleared to pay", paid: "Paid" }[s] || s;
+}
+
+function renderPacketList() {
+  const listEl = document.getElementById("sub-list");
+  if (packets.length === 0) {
+    listEl.innerHTML = `<div class="empty">No submissions yet. Share your client link above to get started.</div>`;
+    return;
+  }
+  // Needs-review items first
+  const sorted = [...packets].sort((a, b) => (a.status === "submitted" ? -1 : 0) - (b.status === "submitted" ? -1 : 0));
+  listEl.innerHTML = sorted.map(p => `
+    <div class="sub-item" onclick="openPacket('${p.id}')">
+      <div class="sub-main">
+        <div class="sub-company">${escapeHtml(p.subcontractor_name)}</div>
+        <div class="sub-meta">${escapeHtml(p.contact_name)} · ${escapeHtml(p.job_description || 'No job description')}</div>
+      </div>
+      <div class="pill ${p.status}">${statusLabel(p.status)}</div>
+    </div>
+  `).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Submission detail / review
+// ---------------------------------------------------------------------------
+
+async function openPacket(id) {
+  currentPacketId = id;
+  const res = await fetch(`${origin}/packets/${id}`, { headers: authHeaders() });
+  if (!res.ok) return;
+  const p = await res.json();
+  renderPacketDetail(p);
+}
+
+const DOC_LABELS = { insurance: "Certificate of Insurance", w9: "W-9", invoice: "Invoice / Quote / Contract" };
+
+function renderPacketDetail(p) {
+  const docsHtml = ["insurance", "w9", "invoice"].map(t => {
+    const d = p.documents.find(x => x.doc_type === t) || { status: "upload_required" };
+    const link = d.status === "uploaded"
+      ? `<a class="doc-link" href="#" onclick="viewFile('${p.id}','${d.id}');return false;">View file</a>`
+      : `<span class="doc-link" style="color:var(--muted);">Not uploaded</span>`;
+    return `<div class="doc-row"><div class="doc-name">${DOC_LABELS[t]}</div>${link}</div>`;
+  }).join("");
+
+  let actionHtml = "";
+  if (p.status === "submitted") {
+    actionHtml = `
+      <div class="field"><label>Note (required if denying)</label><textarea id="review-note" placeholder="e.g. Need signed W-9, not blank"></textarea></div>
+      <div class="row">
+        <button class="primary" onclick="reviewPacket(true)">Approve</button>
+        <button class="danger" onclick="reviewPacket(false)">Deny</button>
+      </div>
+      <div id="review-err" class="err"></div>
+    `;
+  } else if (p.status === "approved") {
+    actionHtml = `<button class="primary" onclick="markPaid()">Mark as paid</button>`;
+  } else if (p.status === "needs_changes") {
+    actionHtml = `<p class="muted">You asked for changes: "${escapeHtml(p.revision_note || '')}" — waiting on the subcontractor to re-upload.</p>`;
+  } else if (p.status === "paid") {
+    actionHtml = `<p class="muted">Paid ${p.paid_at ? new Date(p.paid_at).toLocaleDateString() : ''}.</p>`;
+  } else {
+    actionHtml = `<p class="muted">Waiting on the subcontractor to finish uploading.</p>`;
+  }
+
+  document.getElementById("app").innerHTML = `
+    <div class="topbar">
+      <button class="link-btn" onclick="renderDashboard()">&larr; Back to dashboard</button>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <h1 style="font-size:20px;">${escapeHtml(p.subcontractor_name)}</h1>
+        <div class="pill ${p.status}">${statusLabel(p.status)}</div>
+      </div>
+      <p class="muted">${escapeHtml(p.contact_name)} · ${escapeHtml(p.subcontractor_email)}${p.job_description ? ' · ' + escapeHtml(p.job_description) : ''}</p>
+      ${docsHtml}
+    </div>
+    <div class="card">${actionHtml}</div>
+  `;
+}
+
+async function viewFile(packetId, docId) {
+  const res = await fetch(`${origin}/packets/${packetId}/documents/${docId}/file`, { headers: authHeaders() });
+  if (!res.ok) { alert("Couldn't load file."); return; }
+  const blob = await res.blob();
+  window.open(URL.createObjectURL(blob), "_blank");
+}
+
+async function reviewPacket(approve) {
+  const note = document.getElementById("review-note").value.trim();
+  const errEl = document.getElementById("review-err");
+  if (!approve && !note) { errEl.textContent = "Please explain what's needed."; return; }
+  const res = await fetch(`${origin}/packets/${currentPacketId}/review`, {
+    method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ approve, note: note || null }),
+  });
+  if (!res.ok) { errEl.textContent = "Something went wrong."; return; }
+  openPacket(currentPacketId);
+  loadPackets();
+}
+
+async function markPaid() {
+  const res = await fetch(`${origin}/packets/${currentPacketId}/mark-paid`, { method: "POST", headers: authHeaders() });
+  if (res.ok) { openPacket(currentPacketId); loadPackets(); }
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function escapeAttr(str) { return escapeHtml(str); }
+
+boot();
+</script>
+</body>
+</html>

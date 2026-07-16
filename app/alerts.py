@@ -15,13 +15,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Document, DocumentStatus, Subcontractor, Account, Alert, EXPIRING_DOCUMENT_TYPES
+from app.notifications import send_email as _send_email
 
 logger = logging.getLogger("subverify.alerts")
-
-
-def _send_email(to_address: str, subject: str, body: str) -> None:
-    # Stub: replace with a real provider (SES, Postmark, SendGrid, etc).
-    logger.info("EMAIL -> %s | %s | %s", to_address, subject, body)
 
 
 def scan_and_send_expiry_alerts(db: Session) -> int:

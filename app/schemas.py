@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 
 from app.models import Plan, DocumentType, DocumentStatus, AIVerdict, ComplianceStatus, SubcontractorStatus
 
@@ -36,6 +36,7 @@ class AccountOut(BaseModel):
     created_at: datetime
     brand_logo_url: Optional[str] = None
     brand_welcome_message: Optional[str] = None
+    intake_token: Optional[str] = None
 
 
 class BrandingUpdateRequest(BaseModel):
@@ -137,9 +138,11 @@ class ExpiringDocumentOut(BaseModel):
 from app.models import PacketDocType, PacketDocStatus, PacketStatus
 
 
-class PacketCreate(BaseModel):
-    subcontractor_name: str
-    subcontractor_email: Optional[EmailStr] = None
+class PublicIntakeStartRequest(BaseModel):
+    """What a subcontractor fills in to identify themselves before uploading."""
+    contact_name: str
+    company_name: str
+    contact_email: EmailStr
     job_description: Optional[str] = None
 
 
@@ -153,19 +156,21 @@ class PacketDocumentOut(BaseModel):
     invoice_amount_cents: Optional[str]
     ai_verdict: Optional[AIVerdict]
     ai_notes: Optional[str]
-    reviewed_at: Optional[datetime]
-    reviewer_note: Optional[str]
 
 
 class PacketOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     public_token: str
+    contact_name: str
     subcontractor_name: str
-    subcontractor_email: Optional[EmailStr]
+    subcontractor_email: EmailStr
     job_description: Optional[str]
     status: PacketStatus
     created_at: datetime
+    submitted_at: Optional[datetime]
+    reviewed_at: Optional[datetime]
+    revision_note: Optional[str]
     paid_at: Optional[datetime]
     upload_url: Optional[str] = None
     brand_name: Optional[str] = None
@@ -177,9 +182,16 @@ class PacketDetailOut(PacketOut):
     documents: List[PacketDocumentOut]
 
 
-class PacketDocReviewRequest(BaseModel):
+class PacketReviewRequest(BaseModel):
     approve: bool
-    reviewer_note: Optional[str] = None
+    note: Optional[str] = None  # required (validated) when approve is False
+
+    @model_validator(mode="after")
+    def _require_note_on_deny(self):
+        if not self.approve and not (self.note and self.note.strip()):
+            raise ValueError("A note explaining what's needed is required when denying.")
+        return self
+
 
 
 class ComplianceOverviewOut(BaseModel):

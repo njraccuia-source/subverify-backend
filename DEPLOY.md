@@ -43,19 +43,39 @@ You're going three places, all free:
 6. When it's done, Render gives you a URL like
    `https://subverify-backend.onrender.com` — that's your live backend.
 
+## Important — resetting your database
+
+The app's structure changed since you first deployed (this version adds the
+self-service link and the approve/deny-with-a-reason flow). Your existing
+Neon database has the *old* structure, so before deploying this update you
+need to clear it out — it only has your one test submission in it, so nothing
+real is lost.
+
+1. Go to your Neon project → **SQL Editor** (in the left sidebar).
+2. Paste this in and run it:
+   ```sql
+   DROP TABLE IF EXISTS packet_documents, payment_packets, alerts, documents,
+     project_subcontractors, subcontractors, projects, accounts CASCADE;
+   ```
+3. That's it — the next time your app starts up on Render, it automatically
+   recreates all the tables fresh with the new structure.
+
 ## Using it day to day
 
-- Interactive docs (to create packets, get QR codes, review documents, set
-  each client's branding) live at:
-  `https://subverify-backend.onrender.com/docs`
-  You can do everything from that page by clicking into each endpoint — no
-  coding needed, just filling in boxes and clicking "Execute."
-- The link you send a subcontractor looks like:
-  `https://subverify-backend.onrender.com/pay/<their-token>`
-- **Heads up:** on Render's free tier, the app "falls asleep" after 15 minutes
-  of no visitors, and takes 30-ish seconds to wake back up on the next visit.
-  At ~30 submissions a year, that's basically the only tradeoff of free
-  hosting, and it's a non-issue for this use case.
+Go to `https://subverify-backend.onrender.com/app` — that's your dashboard.
+No API docs needed for normal use:
+
+- **Create an account** the first time for each client (one account per
+  client — each gets its own link and branding).
+- **Log in** to see that client's dashboard: their permanent link + QR code,
+  a branding section (logo + welcome message), and a list of submissions.
+- Share the link/QR with subcontractors. They register themselves and upload
+  their three documents — no account needed on their end.
+- When a submission shows **"Needs your review,"** click into it, view each
+  file, and Approve or Deny with a note.
+- **Heads up:** on Render's free tier, the app "falls asleep" after 15
+  minutes of no visitors, and takes 30-ish seconds to wake back up on the
+  next visit. At your volume, that's the only real tradeoff of free hosting.
 - Neon's free tier is permanent — no time limit, no credit card required at
   this scale.
 

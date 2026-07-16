@@ -114,6 +114,10 @@ class Account(Base):
     brand_logo_url = Column(String, nullable=True)
     brand_welcome_message = Column(Text, nullable=True)
 
+    # Permanent, reusable link/QR the GC gives out to any subcontractor —
+    # doesn't change between submissions.
+    intake_token = Column(String, unique=True, index=True, default=gen_id)
+
     subcontractors = relationship("Subcontractor", back_populates="account", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="account", cascade="all, delete-orphan")
 
@@ -188,24 +192,25 @@ class PacketDocType(str, enum.Enum):
 
 
 class PacketStatus(str, enum.Enum):
-    COLLECTING = "collecting"        # waiting on uploads and/or review
-    READY_TO_PAY = "ready_to_pay"    # all three docs approved
+    COLLECTING = "collecting"        # sub hasn't uploaded all three yet
+    SUBMITTED = "submitted"          # all three uploaded, waiting on GC review
+    NEEDS_CHANGES = "needs_changes"  # GC denied with a note; sub can re-upload
+    APPROVED = "approved"            # GC approved all three; cleared to pay
     PAID = "paid"
 
 
 class PacketDocStatus(str, enum.Enum):
     UPLOAD_REQUIRED = "upload_required"
-    PENDING_REVIEW = "pending_review"
-    APPROVED = "approved"
-    REJECTED = "rejected"
+    UPLOADED = "uploaded"
 
 
 class PaymentPacket(Base):
     """
-    A single shareable link (and QR code) for one subcontractor / one job.
-    The sub uploads their COI, W-9, and invoice through the public link with
-    no login required. Once a GC approves all three, the packet is cleared
-    to pay.
+    One submission from one subcontractor for one job. Subcontractors reach
+    this by filling out the GC's permanent intake link (Account.intake_token),
+    which self-registers them (name, company, email) and creates this record.
+    They then upload COI, W-9, and invoice/quote/contract. Once all three are
+    in, it's ready for the GC to review as a whole and approve or deny.
     """
     __tablename__ = "payment_packets"
 
@@ -213,12 +218,16 @@ class PaymentPacket(Base):
     account_id = Column(String, ForeignKey("accounts.id"), nullable=False)
     public_token = Column(String, unique=True, nullable=False, index=True, default=gen_id)
 
-    subcontractor_name = Column(String, nullable=False)
-    subcontractor_email = Column(String, nullable=True)
+    contact_name = Column(String, nullable=False)
+    subcontractor_name = Column(String, nullable=False)  # company name
+    subcontractor_email = Column(String, nullable=False)
     job_description = Column(String, nullable=True)
 
     status = Column(SAEnum(PacketStatus), default=PacketStatus.COLLECTING, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    revision_note = Column(Text, nullable=True)  # GC's reason when denying
     paid_at = Column(DateTime, nullable=True)
 
     account = relationship("Account")
@@ -242,9 +251,6 @@ class PacketDocument(Base):
 
     ai_verdict = Column(SAEnum(AIVerdict), nullable=True)
     ai_notes = Column(Text, nullable=True)
-
-    reviewed_at = Column(DateTime, nullable=True)
-    reviewer_note = Column(Text, nullable=True)
 
     packet = relationship("PaymentPacket", back_populates="documents")
 
