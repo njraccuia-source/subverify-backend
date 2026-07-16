@@ -45,17 +45,16 @@ You're going three places, all free:
 
 ## Important — resetting your database
 
-The app's structure changed since you first deployed (this version adds the
-self-service link and the approve/deny-with-a-reason flow). Your existing
-Neon database has the *old* structure, so before deploying this update you
-need to clear it out — it only has your one test submission in it, so nothing
-real is lost.
+The app's structure changed again (Account is now just your one login; a new
+"Client" table holds each business you manage, with its own link/branding).
+Your existing Neon database has the *old* structure, so clear it out first —
+it only has test data, nothing real is lost.
 
-1. Go to your Neon project → **SQL Editor** (in the left sidebar).
+1. Go to your Neon project → **SQL Editor** in the left sidebar.
 2. Paste this in and run it:
    ```sql
-   DROP TABLE IF EXISTS packet_documents, payment_packets, alerts, documents,
-     project_subcontractors, subcontractors, projects, accounts CASCADE;
+   DROP TABLE IF EXISTS packet_documents, payment_packets, clients, alerts,
+     documents, project_subcontractors, subcontractors, projects, accounts CASCADE;
    ```
 3. That's it — the next time your app starts up on Render, it automatically
    recreates all the tables fresh with the new structure.
@@ -65,12 +64,17 @@ real is lost.
 Go to `https://subverify-backend.onrender.com/app` — that's your dashboard.
 No API docs needed for normal use:
 
-- **Create an account** the first time for each client (one account per
-  client — each gets its own link and branding).
-- **Log in** to see that client's dashboard: their permanent link + QR code,
-  a branding section (logo + welcome message), and a list of submissions.
-- Share the link/QR with subcontractors. They register themselves and upload
-  their three documents — no account needed on their end.
+- **The first time**, click "Set up your login" — this is the **one** login
+  you'll ever use, not per-client.
+- Once logged in, you'll see **Your clients** — add one entry per business
+  you manage (e.g. "Northeastern Construction," "PS Construction"). Each gets
+  its own permanent link, QR code, and branding, but you manage all of them
+  from the same login.
+- Click into a client to see their link/QR, set their logo and welcome
+  message, and see their list of submissions.
+- Share that client's link/QR with their subcontractors — subs register
+  themselves (name, company, email) and upload their three documents, no
+  account needed on their end.
 - When a submission shows **"Needs your review,"** click into it, view each
   file, and Approve or Deny with a note.
 - **Heads up:** on Render's free tier, the app "falls asleep" after 15
