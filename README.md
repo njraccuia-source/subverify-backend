@@ -64,3 +64,5 @@ app/
 ## Tech stack
 
 FastAPI, SQLAlchemy (Postgres via `DATABASE_URL`, e.g. Neon), Pydantic v2, JWT auth, `qrcode` for QR generation.
+
+<!-- redeploy trigger -->
