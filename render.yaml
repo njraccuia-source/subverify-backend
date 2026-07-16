@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: subverify-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: subverify-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:////data/subverify.db
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: EXPIRY_ALERT_WINDOW_DAYS
+        value: "30"
