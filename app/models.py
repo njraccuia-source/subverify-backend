@@ -261,6 +261,7 @@ class PacketDocument(Base):
     content_type = Column(String, nullable=True)
     original_filename = Column(String, nullable=True)
     invoice_amount_cents = Column(String, nullable=True)  # only meaningful for INVOICE type
+    expiry_date = Column(Date, nullable=True)  # set by the GC — mainly used for the insurance/COI doc
 
     status = Column(SAEnum(PacketDocStatus), default=PacketDocStatus.UPLOAD_REQUIRED)
     uploaded_at = Column(DateTime, nullable=True)

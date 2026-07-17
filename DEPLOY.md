@@ -59,6 +59,15 @@ it only has test data, nothing real is lost.
 3. That's it — the next time your app starts up on Render, it automatically
    recreates all the tables fresh with the new structure.
 
+## Part 4 — Turn on real email sending (optional but recommended)
+
+Right now, approve/deny notifications are just logged on the server — subcontractors don't actually get emailed yet. To turn that on:
+
+1. Go to **resend.com** and sign up (free — 3,000 emails/month).
+2. Once in, go to **API Keys** → **Create API Key**. Copy the key it gives you (starts with `re_`).
+3. Go to your Render service → **Environment** tab → find `RESEND_API_KEY` → paste the key in → save. Render will redeploy automatically.
+4. That's it — approve/deny emails will now actually send, from a shared Resend testing address. If you want them to come from your own domain later (e.g. `noreply@yourfirm.com`), that requires verifying a domain in Resend — let me know if you want to set that up.
+
 ## Using it day to day
 
 Go to `https://subverify-backend.onrender.com/app` — that's your dashboard.

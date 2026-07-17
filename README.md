@@ -1,4 +1,4 @@
-# SubVerify-style Backend
+# SubDox Backend
 
 A backend + simple web dashboard for a **pay-gated document collection**
 workflow: give a client's subcontractors one reusable link (or QR code), they
@@ -32,6 +32,12 @@ Open `http://127.0.0.1:8000/app` — that's the dashboard. No API knowledge need
 
 Every submission — its documents, your decision, and your note — is stored, so you have a record of what was collected and approved before every payment.
 
+**Also available per client:** search/filter submissions, export everything to CSV, delete a submission or an entire client, and set/track an expiration date on the Certificate of Insurance (shows an "Expiring soon" / "Expired" badge once you set a date).
+
+## Where your data lives
+
+Everything — client info, submissions, and the actual uploaded files themselves — is stored in your Postgres database (Neon). Files are saved as data inside the database, not as separate files on a server disk, so nothing is lost on redeploys or restarts. There's no separate file storage system to think about.
+
 ## Compliance-tracking module (optional, separate feature)
 
 The backend also includes a fuller subcontractor compliance-tracking module (ongoing tracking across 10 document types, expiry alerts) if you ever want to grow into that. It's independent of the flow above and reachable via `/docs` (the API reference) rather than the dashboard.
@@ -58,7 +64,7 @@ app/
 ## Things stubbed for you to swap in for production
 
 - **AI document review** (`app/ai_review.py`): currently a filename-based heuristic. Replace with a real model call if you want actual content verification.
-- **Email sending** (`app/notifications.py`): currently just logs. Wire up a real provider (SES/Postmark/SendGrid) to actually send the approve/deny emails.
+- **Email sending** (`app/notifications.py`): sends real emails via **Resend** if `RESEND_API_KEY` is set; otherwise falls back to logging only, so local dev works without an API key.
 - **Payment execution**: "Mark as paid" only records that payment happened — it doesn't move money.
 
 ## Tech stack

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SubVerify — Dashboard</title>
+<title>SubDox — Dashboard</title>
 <style>
   :root {
     --ink: #1c2126; --paper: #f6f4ef; --card: #ffffff; --line: #dcd7cc;
@@ -128,7 +128,7 @@ async function boot() {
 function renderLogin() {
   document.getElementById("app").innerHTML = `
     <div class="card auth-card">
-      <h1>SubVerify</h1>
+      <h1>SubDox</h1>
       <p class="muted">Log in.</p>
       <div class="field"><label>Email</label><input id="login-email" type="email" /></div>
       <div class="field"><label>Password</label><input id="login-password" type="password" /></div>
@@ -299,12 +299,39 @@ async function renderClientDashboard() {
     </div>
 
     <div class="card">
-      <h3>Submissions</h3>
+      <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+        <h3 style="margin:0;">Submissions</h3>
+        <button class="secondary" onclick="exportCsv()">Export CSV</button>
+      </div>
+      <div class="field"><input id="sub-search" type="text" placeholder="Search by name, company, or email…" oninput="renderPacketList()" /></div>
       <div id="sub-list" class="list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <button class="danger" onclick="confirmDeleteClient()">Delete this client</button>
+      <p class="muted" style="margin: 10px 0 0;">Removes ${escapeHtml(c.name)} and all of its submissions. This can't be undone.</p>
     </div>
   `;
   loadQr();
   loadPackets();
+}
+
+function exportCsv() {
+  const url = `${origin}/packets/export?client_id=${currentClient.id}`;
+  fetch(url, { headers: authHeaders() })
+    .then(res => res.blob())
+    .then(blob => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${currentClient.name.replace(/[^a-z0-9]+/gi, "_")}_submissions.csv`;
+      a.click();
+    });
+}
+
+async function confirmDeleteClient() {
+  if (!confirm(`Delete ${currentClient.name} and all of its submissions? This can't be undone.`)) return;
+  const res = await fetch(`${origin}/clients/${currentClient.id}`, { method: "DELETE", headers: authHeaders() });
+  if (res.ok) renderClientList();
 }
 
 async function loadQr() {
@@ -355,7 +382,22 @@ function renderPacketList() {
     listEl.innerHTML = `<div class="empty">No submissions yet. Share the link above to get started.</div>`;
     return;
   }
-  const sorted = [...packets].sort((a, b) => (a.status === "submitted" ? -1 : 0) - (b.status === "submitted" ? -1 : 0));
+  const searchEl = document.getElementById("sub-search");
+  const q = (searchEl ? searchEl.value : "").trim().toLowerCase();
+  let filtered = packets;
+  if (q) {
+    filtered = packets.filter(p =>
+      p.subcontractor_name.toLowerCase().includes(q) ||
+      p.contact_name.toLowerCase().includes(q) ||
+      p.subcontractor_email.toLowerCase().includes(q) ||
+      (p.job_description || "").toLowerCase().includes(q)
+    );
+  }
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="empty">No matches.</div>`;
+    return;
+  }
+  const sorted = [...filtered].sort((a, b) => (a.status === "submitted" ? -1 : 0) - (b.status === "submitted" ? -1 : 0));
   listEl.innerHTML = sorted.map(p => `
     <div class="list-item" onclick="openPacket('${p.id}')">
       <div class="li-main">
@@ -381,13 +423,35 @@ async function openPacket(id) {
 
 const DOC_LABELS = { insurance: "Certificate of Insurance", w9: "W-9", invoice: "Invoice / Quote / Contract" };
 
+function coiExpiryBadge(expiryDate) {
+  if (!expiryDate) return "";
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp = new Date(expiryDate + "T00:00:00");
+  const daysLeft = Math.round((exp - today) / 86400000);
+  let cls = "approved", label = `Expires ${exp.toLocaleDateString()}`;
+  if (daysLeft < 0) { cls = "needs_changes"; label = `Expired ${exp.toLocaleDateString()}`; }
+  else if (daysLeft <= 30) { cls = "submitted"; label = `Expiring soon — ${exp.toLocaleDateString()}`; }
+  return `<span class="pill ${cls}" style="margin-left:8px;">${label}</span>`;
+}
+
 function renderPacketDetail(p) {
   const docsHtml = ["insurance", "w9", "invoice"].map(t => {
     const d = p.documents.find(x => x.doc_type === t) || { status: "upload_required" };
     const link = d.status === "uploaded"
       ? `<a class="doc-link" href="#" onclick="viewFile('${p.id}','${d.id}');return false;">View file</a>`
       : `<span class="doc-link" style="color:var(--muted);">Not uploaded</span>`;
-    return `<div class="doc-row"><div class="doc-name">${DOC_LABELS[t]}</div>${link}</div>`;
+    const expiryRow = (t === "insurance" && d.id) ? `
+      <div class="row" style="margin-top:8px; margin-bottom:12px;">
+        <input type="date" id="coi-expiry-input" value="${d.expiry_date || ''}" style="max-width:170px; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:16px;" />
+        <button class="secondary" onclick="saveCoiExpiry('${p.id}','${d.id}')">Save expiry</button>
+        ${coiExpiryBadge(d.expiry_date)}
+      </div>` : "";
+    return `<div class="doc-row" style="flex-direction:column; align-items:stretch;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="doc-name">${DOC_LABELS[t]}</div>${link}
+      </div>
+      ${expiryRow}
+    </div>`;
   }).join("");
 
   let actionHtml = "";
@@ -423,7 +487,25 @@ function renderPacketDetail(p) {
       ${docsHtml}
     </div>
     <div class="card">${actionHtml}</div>
+    <div class="card">
+      <button class="danger" onclick="confirmDeletePacket('${p.id}')">Delete this submission</button>
+    </div>
   `;
+}
+
+async function saveCoiExpiry(packetId, docId) {
+  const val = document.getElementById("coi-expiry-input").value;
+  const res = await fetch(`${origin}/packets/${packetId}/documents/${docId}/expiry`, {
+    method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ expiry_date: val || null }),
+  });
+  if (res.ok) openPacket(packetId);
+}
+
+async function confirmDeletePacket(id) {
+  if (!confirm("Delete this submission? This can't be undone.")) return;
+  const res = await fetch(`${origin}/packets/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (res.ok) { renderClientDashboard(); loadPackets(); }
 }
 
 async function viewFile(packetId, docId) {

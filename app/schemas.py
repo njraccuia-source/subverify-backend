@@ -172,8 +172,13 @@ class PacketDocumentOut(BaseModel):
     status: PacketDocStatus
     uploaded_at: Optional[datetime]
     invoice_amount_cents: Optional[str]
+    expiry_date: Optional[date] = None
     ai_verdict: Optional[AIVerdict]
     ai_notes: Optional[str]
+
+
+class DocumentExpiryUpdateRequest(BaseModel):
+    expiry_date: Optional[date] = None
 
 
 class PacketOut(BaseModel):

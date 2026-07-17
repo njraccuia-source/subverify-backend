@@ -1,3 +1,4 @@
+import csv
 import io
 import os
 from datetime import datetime
@@ -14,7 +15,7 @@ from app.models import (
 )
 from app.notifications import send_email
 from app.schemas import (
-    PublicIntakeStartRequest, PacketOut, PacketDetailOut, PacketReviewRequest,
+    PublicIntakeStartRequest, PacketOut, PacketDetailOut, PacketReviewRequest, DocumentExpiryUpdateRequest,
 )
 
 router = APIRouter(tags=["payment-packets"])
@@ -87,12 +88,76 @@ def list_packets(
     return [_packet_to_out(p, request) for p in packets]
 
 
+@router.get("/packets/export")
+def export_packets_csv(
+    client_id: str | None = None,
+    db: Session = Depends(get_db), current: Account = Depends(get_current_account),
+):
+    q = db.query(PaymentPacket).join(Client).filter(Client.account_id == current.id)
+    if client_id:
+        q = q.filter(PaymentPacket.client_id == client_id)
+    packets = q.order_by(PaymentPacket.created_at.desc()).all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Client", "Subcontractor Company", "Contact Name", "Contact Email", "Job",
+        "Status", "Submitted At", "Reviewed At", "Paid At", "Revision Note", "COI Expiry Date",
+    ])
+    for p in packets:
+        coi = next((d for d in p.documents if d.doc_type == PacketDocType.INSURANCE), None)
+        writer.writerow([
+            p.client.name if p.client else "",
+            p.subcontractor_name,
+            p.contact_name,
+            p.subcontractor_email,
+            p.job_description or "",
+            p.status.value,
+            p.submitted_at.isoformat() if p.submitted_at else "",
+            p.reviewed_at.isoformat() if p.reviewed_at else "",
+            p.paid_at.isoformat() if p.paid_at else "",
+            p.revision_note or "",
+            coi.expiry_date.isoformat() if coi and coi.expiry_date else "",
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=submissions.csv"},
+    )
+
+
 @router.get("/packets/{packet_id}", response_model=PacketDetailOut)
 def get_packet(packet_id: str, request: Request, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
     packet = _owned_packet(db, packet_id, current)
     data = _packet_to_out(packet, request)
     data["documents"] = packet.documents
     return data
+
+
+@router.patch("/packets/{packet_id}/documents/{doc_id}/expiry", response_model=PacketDetailOut)
+def update_document_expiry(
+    packet_id: str, doc_id: str, payload: DocumentExpiryUpdateRequest, request: Request,
+    db: Session = Depends(get_db), current: Account = Depends(get_current_account),
+):
+    packet = _owned_packet(db, packet_id, current)
+    doc = next((d for d in packet.documents if d.id == doc_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    doc.expiry_date = payload.expiry_date
+    db.commit()
+    db.refresh(packet)
+    data = _packet_to_out(packet, request)
+    data["documents"] = packet.documents
+    return data
+
+
+@router.delete("/packets/{packet_id}", status_code=204)
+def delete_packet(packet_id: str, db: Session = Depends(get_db), current: Account = Depends(get_current_account)):
+    packet = _owned_packet(db, packet_id, current)
+    db.delete(packet)
+    db.commit()
+    return None
 
 
 @router.get("/packets/{packet_id}/documents/{doc_id}/file")

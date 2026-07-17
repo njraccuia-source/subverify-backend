@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     upload_dir: str = "./uploads"
     expiry_alert_window_days: int = 30
+    resend_api_key: str = ""
+    email_from: str = "SubDox <onboarding@resend.dev>"
 
     class Config:
         env_file = ".env"

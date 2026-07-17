@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="SubVerify API",
+    title="SubDox API",
     description="Subcontractor compliance management backend: subcontractors, "
                 "document uploads, compliance tracking, and expiry alerts.",
     version="1.0.0",
