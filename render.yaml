@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: subverify-backend
+    name: subdox-backend
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
