@@ -4,12 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.alerts import start_scheduler
-from app.database import Base, engine
+from app.database import Base, engine, run_auto_migrations
 from app.routers import auth, subcontractors, projects, documents, dashboard, packets, clients
 
 logging.basicConfig(level=logging.INFO)
 
 Base.metadata.create_all(bind=engine)
+run_auto_migrations()
 
 app = FastAPI(
     title="SubDox API",
