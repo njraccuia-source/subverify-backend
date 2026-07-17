@@ -1,6 +1,8 @@
 import csv
 import io
 import os
+import re
+import zipfile
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
@@ -124,6 +126,43 @@ def export_packets_csv(
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=submissions.csv"},
+    )
+
+
+def _safe_folder_name(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9 _-]", "", name).strip()
+    return cleaned or "submission"
+
+
+@router.get("/packets/export-files")
+def export_packets_zip(
+    client_id: str | None = None,
+    db: Session = Depends(get_db), current: Account = Depends(get_current_account),
+):
+    q = db.query(PaymentPacket).join(Client).filter(Client.account_id == current.id)
+    if client_id:
+        q = q.filter(PaymentPacket.client_id == client_id)
+    packets = q.order_by(PaymentPacket.created_at.desc()).all()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in packets:
+            folder = _safe_folder_name(f"{p.subcontractor_name} - {p.contact_name}")
+            has_any_file = False
+            for d in p.documents:
+                if not d.file_data:
+                    continue
+                has_any_file = True
+                ext = os.path.splitext(d.original_filename or "")[1] or ""
+                filename = f"{d.doc_type.value}{ext}"
+                zf.writestr(f"{folder}/{filename}", d.file_data)
+            if not has_any_file:
+                zf.writestr(f"{folder}/.no_files_uploaded", "")
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=submission_files.zip"},
     )
 
 

@@ -32,7 +32,7 @@ Open `http://127.0.0.1:8000/app` — that's the dashboard. No API knowledge need
 
 Every submission — its documents, your decision, and your note — is stored, so you have a record of what was collected and approved before every payment.
 
-**Also available per client:** search/filter submissions, export everything to CSV, delete a submission or an entire client, and set/track an expiration date on the Certificate of Insurance (shows an "Expiring soon" / "Expired" badge once you set a date).
+**Also available per client:** search/filter submissions, export everything to CSV, download every submitted document as a single ZIP file, delete a submission or an entire client, and set/track an expiration date on the Certificate of Insurance (shows an "Expiring soon" / "Expired" badge once you set a date).
 
 ## Where your data lives
 
